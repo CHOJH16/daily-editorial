@@ -59,15 +59,13 @@ try:
     
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # 3. 사설 목록 찾기 (가장 안정적인 방법: 'ul' 태그 중 기사 링크를 가장 많이 포함한 것 찾기)
-    # 네이버의 클래스 이름은 수시로 바뀌므로, 구조를 보고 찾습니다.
+    # 3. 사설 목록 찾기
     candidates = soup.find_all('ul')
     target_ul = None
     max_links = 0
     
     for ul in candidates:
         links = ul.find_all('a')
-        # 링크 주소에 'article'이 포함된 갯수를 셉니다.
         count = sum(1 for a in links if a.get('href') and '/article/' in a.get('href'))
         if count > max_links:
             max_links = count
@@ -79,18 +77,27 @@ try:
         items = target_ul.find_all('li')
         for item in items:
             try:
-                # 제목과 링크 찾기
                 a_tag = item.find('a')
                 if not a_tag: continue
                 
-                title = a_tag.get_text(strip=True)
-                link = a_tag['href']
+                # [개선 1] 시간 정보를 담은 태그를 미리 제거
+                time_tag = a_tag.find('span', class_='time')
+                if time_tag:
+                    time_tag.decompose()
                 
-                # 언론사 이름 찾기 (보통 strong 태그나 특정 클래스에 있음, 없으면 '사설'로 통일)
+                # 언론사 이름 찾기
                 press_tag = item.find(class_='press_name') or item.find('strong')
                 press = press_tag.get_text(strip=True) if press_tag else "사설"
                 
-                # 썸네일/이미지 링크인 경우 제외하고 텍스트 링크만 저장
+                # 제목 텍스트 추출 (이제 시간 정보가 없음)
+                title = a_tag.get_text(strip=True)
+                
+                # [개선 2] 제목이 언론사 이름으로 시작하면 중복 제거
+                if title.startswith(press):
+                    title = title[len(press):].lstrip('[] ') # '한국경제[사설]...' 같은 경우 앞의 '한국경제'와 괄호, 공백까지 제거
+
+                link = a_tag['href']
+                
                 if len(title) > 5: 
                     news_data.append({'title': title, 'link': link, 'press': press})
             except Exception as e:
