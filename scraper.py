@@ -3,16 +3,48 @@ from bs4 import BeautifulSoup
 import datetime
 import os
 
-# 1. 네이버 사설 페이지 접속 설정
+# --- 설정 ---
 url = "https://news.naver.com/opinion/editorial"
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 }
 
-def create_html(news_list):
+# 텔레그램 전송 함수 (새로 추가된 기능)
+def send_telegram(news_list):
+    token = os.environ.get('TELEGRAM_TOKEN')
+    chat_id = os.environ.get('CHAT_ID')
+    
+    if not token or not chat_id:
+        print("텔레그램 설정이 없습니다. (GitHub Secrets를 확인하세요)")
+        return
+
     # 오늘 날짜
     today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
     
+    # 메시지 만들기
+    message = f"📰 {today} 주요 사설 요약\n\n"
+    
+    for news in news_list:
+        # 제목과 링크를 깔끔하게 정리해서 메시지에 추가
+        message += f"[{news['press']}] {news['title']}\n"
+        message += f"{news['link']}\n\n"
+    
+    # 내 웹사이트 링크도 마지막에 추가
+    message += "👉 웹에서 보기: https://chojh16.github.io/daily-editorial/"
+
+    # 텔레그램 서버로 발송 요청
+    send_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = {'chat_id': chat_id, 'text': message, 'disable_web_page_preview': True}
+    
+    try:
+        response = requests.post(send_url, data=data)
+        print(f"텔레그램 전송 결과: {response.status_code}")
+    except Exception as e:
+        print(f"텔레그램 전송 실패: {e}")
+
+# HTML 생성 함수 (기존 기능 유지)
+def create_html(news_list):
+    today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
     html_content = f"""
     <!DOCTYPE html>
     <html lang="ko">
@@ -36,7 +68,6 @@ def create_html(news_list):
         <div class="update-time">업데이트: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
         <div class="news-container">
     """
-    
     for news in news_list:
         html_content += f"""
         <div class="card">
@@ -44,26 +75,18 @@ def create_html(news_list):
             <a href="{news['link']}" target="_blank">{news['title']}</a>
         </div>
         """
-        
-    html_content += """
-        </div>
-    </body>
-    </html>
-    """
+    html_content += "</div></body></html>"
     return html_content
 
+# --- 메인 실행 로직 ---
 try:
-    # 2. 페이지 내용 가져오기
     response = requests.get(url, headers=headers)
-    response.raise_for_status() # 접속 에러 시 중단
-    
+    response.raise_for_status()
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # 3. 사설 목록 찾기
     candidates = soup.find_all('ul')
     target_ul = None
     max_links = 0
-    
     for ul in candidates:
         links = ul.find_all('a')
         count = sum(1 for a in links if a.get('href') and '/article/' in a.get('href'))
@@ -72,7 +95,6 @@ try:
             target_ul = ul
             
     news_data = []
-    
     if target_ul:
         items = target_ul.find_all('li')
         for item in items:
@@ -80,36 +102,36 @@ try:
                 a_tag = item.find('a')
                 if not a_tag: continue
                 
-                # [개선 1] 시간 정보를 담은 태그를 미리 제거
+                # 시간 태그 제거
                 time_tag = a_tag.find('span', class_='time')
-                if time_tag:
-                    time_tag.decompose()
+                if time_tag: time_tag.decompose()
                 
-                # 언론사 이름 찾기
+                # 언론사 추출
                 press_tag = item.find(class_='press_name') or item.find('strong')
                 press = press_tag.get_text(strip=True) if press_tag else "사설"
                 
-                # 제목 텍스트 추출 (이제 시간 정보가 없음)
+                # 제목 추출 및 정리
                 title = a_tag.get_text(strip=True)
-                
-                # [개선 2] 제목이 언론사 이름으로 시작하면 중복 제거
                 if title.startswith(press):
-                    title = title[len(press):].lstrip('[] ') # '한국경제[사설]...' 같은 경우 앞의 '한국경제'와 괄호, 공백까지 제거
-
-                link = a_tag['href']
+                    title = title[len(press):].lstrip('[] ')
                 
+                link = a_tag['href']
                 if len(title) > 5: 
                     news_data.append({'title': title, 'link': link, 'press': press})
-            except Exception as e:
+            except Exception:
                 continue
 
-    # 4. index.html 파일 저장
     if news_data:
+        # 1. HTML 파일 만들기
         with open("index.html", "w", encoding="utf-8") as f:
             f.write(create_html(news_data))
-        print(f"성공: {len(news_data)}개의 기사를 저장했습니다.")
+        print(f"파일 저장 완료: {len(news_data)}개")
+        
+        # 2. 텔레그램 보내기 (여기가 핵심!)
+        send_telegram(news_data)
+        
     else:
-        print("경고: 기사를 찾지 못했습니다. 네이버 페이지 구조가 바뀌었을 수 있습니다.")
+        print("기사를 찾지 못했습니다.")
 
 except Exception as e:
     print(f"에러 발생: {e}")
