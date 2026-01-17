@@ -2,9 +2,12 @@ import requests
 from bs4 import BeautifulSoup
 import datetime
 import os
+import re
 
 # --- 설정 ---
-url = "https://news.naver.com/opinion/editorial"
+# 목표 변경: 최신 페이지 대신 '고전 리스트 페이지'를 공략합니다.
+# sid1=110(오피니언), sid2=262(사설)
+base_url = "https://news.naver.com/main/list.naver?mode=LS2D&mid=shm&sid1=110&sid2=262"
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 }
@@ -18,19 +21,19 @@ def send_telegram(news_list):
         print("텔레그램 설정이 없습니다.")
         return
 
-    today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
+    today_str = datetime.datetime.now().strftime("%Y년 %m월 %d일")
     
-    # 메시지 헤더
-    message = f"📰 {today} 주요 사설 요약\n"
-    message += f"총 {len(news_list)}개의 사설을 찾았습니다.\n\n"
+    # 메시지 시작
+    message = f"📰 {today_str} 주요 사설 요약\n"
+    message += f"총 {len(news_list)}개의 사설을 모두 가져왔습니다.\n\n"
     
     current_message = message
     
     for news in news_list:
         news_item = f"[{news['press']}] {news['title']}\n{news['link']}\n\n"
         
-        # 텔레그램 글자수 제한(4096자) 방지: 길면 끊어서 보내기
-        if len(current_message) + len(news_item) > 3800:
+        # 텔레그램 길이 제한 안전장치 (약 3500자로 설정)
+        if len(current_message) + len(news_item) > 3500:
             try:
                 send_url = f"https://api.telegram.org/bot{token}/sendMessage"
                 data = {'chat_id': chat_id, 'text': current_message, 'disable_web_page_preview': True}
@@ -41,7 +44,7 @@ def send_telegram(news_list):
         
         current_message += news_item
     
-    # 마지막 조각 전송
+    # 마지막 내용 전송
     current_message += "👉 웹에서 보기: https://chojh16.github.io/daily-editorial/"
     
     try:
@@ -54,14 +57,14 @@ def send_telegram(news_list):
 
 # HTML 생성 함수
 def create_html(news_list):
-    today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
+    today_str = datetime.datetime.now().strftime("%Y년 %m월 %d일")
     html_content = f"""
     <!DOCTYPE html>
     <html lang="ko">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>오늘의 사설 ({today})</title>
+        <title>오늘의 사설 ({today_str})</title>
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f9; }}
             h1 {{ color: #333; text-align: center; border-bottom: 2px solid #03c75a; padding-bottom: 10px; }}
@@ -90,77 +93,91 @@ def create_html(news_list):
     html_content += "</div></body></html>"
     return html_content
 
-# --- 메인 실행 로직 (개선된 부분) ---
+# --- 메인 실행 로직 (페이지 순회 방식) ---
 try:
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
-    soup = BeautifulSoup(response.text, 'html.parser')
+    # 오늘 날짜 (YYYYMMDD 형식)
+    target_date = datetime.datetime.now().strftime("%Y%m%d")
     
     news_data = []
-    seen_links = set() # 중복 방지용
-
-    # [핵심 변경] ul 태그를 찾지 않습니다. 
-    # 페이지 전체에서 'li' 태그를 모두 긁어온 뒤, 기사인지 하나하나 검사합니다.
-    all_items = soup.find_all('li')
+    seen_links = set() # 중복 제거용
     
-    for item in all_items:
-        try:
-            a_tag = item.find('a')
-            if not a_tag: continue
+    # 1페이지부터 5페이지까지 뒤집니다 (보통 하루 사설은 2~3페이지면 끝납니다)
+    for page in range(1, 6):
+        # 날짜와 페이지 번호를 넣어서 주소 완성
+        target_url = f"{base_url}&date={target_date}&page={page}"
+        print(f"탐색 중: {target_url}")
+        
+        response = requests.get(target_url, headers=headers)
+        soup = BeautifulSoup(response.text, 'html.parser')
+        
+        # 리스트 영역 찾기
+        list_body = soup.find('div', class_='list_body')
+        if not list_body:
+            break # 리스트가 없으면 종료
             
-            link = a_tag.get('href', '')
+        items = list_body.find_all('li')
+        
+        # 더 이상 기사가 없으면 종료
+        if not items:
+            break
             
-            # 1. 링크가 뉴스 기사 형식이 아니면 가차없이 버림
-            if '/article/' not in link:
+        found_new = False
+        
+        for item in items:
+            try:
+                # 링크와 제목 찾기 (dt 태그 안에 있음)
+                dt_tags = item.find_all('dt')
+                
+                # dt가 2개인 경우(이미지+제목), 1개인 경우(제목만) 처리
+                a_tag = None
+                for dt in dt_tags:
+                    if not dt.find('img'): # 이미지가 없는 dt가 진짜 제목
+                        a_tag = dt.find('a')
+                        break
+                # 만약 위에서 못 찾았으면 첫번째 dt의 a를 씀
+                if not a_tag and dt_tags:
+                    a_tag = dt_tags[0].find('a')
+                    
+                if not a_tag: continue
+                
+                link = a_tag['href']
+                title = a_tag.get_text(strip=True)
+                
+                # 중복 체크
+                if link in seen_links:
+                    continue
+                    
+                # 언론사 찾기 (dd 태그 안의 writing 클래스)
+                press_tag = item.find('span', class_='writing')
+                press = press_tag.get_text(strip=True) if press_tag else "사설"
+                
+                # 제목 정리 (언론사 이름 제거)
+                if title.startswith(press):
+                    title = title[len(press):].lstrip('[] ')
+                if title.startswith(f"[{press}]"):
+                    title = title[len(press)+2:].strip()
+
+                news_data.append({'title': title, 'link': link, 'press': press})
+                seen_links.add(link)
+                found_new = True
+                
+            except Exception:
                 continue
-            
-            # 2. 이미 저장한 기사면 패스 (중복 제거)
-            if link in seen_links:
-                continue
-
-            # 3. 제목 추출
-            title = a_tag.get_text(strip=True)
-            if len(title) < 4: # 제목이 너무 짧으면(아이콘 등) 버림
-                continue
-
-            # 4. 언론사 추출 (여러가지 케이스 대응)
-            press = "사설" # 기본값
-            press_tag = item.find(class_='press_name')
-            if not press_tag:
-                press_tag = item.find('strong')
-            
-            if press_tag:
-                press = press_tag.get_text(strip=True)
-            else:
-                # 태그가 없으면 제목 앞에 [언론사]가 있는지 확인 시도
-                pass
-
-            # 5. 시간 태그 제거 (제목 안에 시간이 섞여있을 경우)
-            time_tag = a_tag.find('span', class_='time')
-            if time_tag: time_tag.decompose()
-            # 다시 제목 추출 (시간 제거 후)
-            title = a_tag.get_text(strip=True)
-
-            # 6. 제목 정리 (언론사 이름 중복 제거)
-            if title.startswith(press):
-                title = title[len(press):].lstrip('[] ')
-
-            news_data.append({'title': title, 'link': link, 'press': press})
-            seen_links.add(link)
-
-        except Exception:
-            continue
+        
+        # 이번 페이지에서 새로운 걸 하나도 못 찾았으면(마지막 페이지 도달) 종료
+        if not found_new:
+            break
 
     if news_data:
         # 파일 저장
         with open("index.html", "w", encoding="utf-8") as f:
             f.write(create_html(news_data))
-        print(f"저장 완료: {len(news_data)}개")
+        print(f"총 {len(news_data)}개의 기사 저장 완료")
         
         # 텔레그램 전송
         send_telegram(news_data)
     else:
-        print("기사를 하나도 못 찾았습니다. (코드 확인 필요)")
+        print("기사를 찾지 못했습니다.")
 
 except Exception as e:
     print(f"에러 발생: {e}")
