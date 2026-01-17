@@ -5,27 +5,23 @@ import os
 import time
 
 # --- 설정 ---
-# 네이버 뉴스 사설 리스트 페이지 (페이지 번호로 접근 가능)
+# 네이버 뉴스 사설 리스트 페이지
 target_url_base = "https://news.naver.com/main/list.naver?mode=LS2D&mid=shm&sid1=110&sid2=262"
 headers = {
-    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+    # 봇 차단을 막기 위한 일반 사용자 위장 헤더
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
 }
 
 def send_msg(text):
-    """텔레그램 메시지 전송 함수"""
     token = os.environ.get('TELEGRAM_TOKEN')
     chat_id = os.environ.get('CHAT_ID')
-    
-    if not token or not chat_id:
-        print("❌ [오류] 텔레그램 설정(TOKEN, CHAT_ID)이 없습니다.")
-        return
-
-    url = f"https://api.telegram.org/bot{token}/sendMessage"
+    if not token or not chat_id: return
     try:
+        url = f"https://api.telegram.org/bot{token}/sendMessage"
         data = {'chat_id': chat_id, 'text': text, 'disable_web_page_preview': True}
         requests.post(url, data=data)
-    except Exception as e:
-        print(f"❌ [오류] 텔레그램 전송 실패: {e}")
+    except: pass
 
 def create_html(news_list):
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -53,85 +49,89 @@ def create_html(news_list):
     html += "</body></html>"
     return html
 
-# === 메인 실행 로직 ===
+# === 메인 로직 ===
 try:
-    print("🚀 로봇 시작!")
-    # [진단 1] 로봇이 깨어났음을 알림
-    send_msg("🤖 로봇이 작업을 시작했습니다.\n(이 메시지가 오면 설정은 정상입니다.)")
+    print("🚀 로봇 시작")
+    # 시작 메시지는 생략 (너무 시끄러울 수 있어서)
 
     news_data = []
     seen_links = set()
 
-    # 1페이지 ~ 3페이지 탐색 (약 60개 기사)
+    # 1페이지 ~ 3페이지 탐색
     for page in range(1, 4):
         url = f"{target_url_base}&page={page}"
-        print(f"📡 {page}페이지 접속 중: {url}")
+        print(f"접속: {url}")
         
         res = requests.get(url, headers=headers)
+        # HTML 텍스트 전체를 가져옵니다.
         soup = BeautifulSoup(res.text, 'html.parser')
 
-        # 네이버 리스트 페이지 구조: ul.type06_headline 과 ul.type06 안에 기사가 있음
-        # 이 두 종류의 ul 안에 있는 모든 li를 찾음
-        articles = soup.select('ul.type06_headline li') + soup.select('ul.type06 li')
+        # [핵심 변경] 특정 클래스(ul.type06)를 찾지 않습니다.
+        # 페이지 내의 '모든' a 태그를 다 가져와서 검사합니다.
+        all_links = soup.find_all('a')
         
-        print(f"   -> {len(articles)}개의 항목 발견")
-
-        for item in articles:
+        found_count = 0
+        
+        for a in all_links:
             try:
-                # dl 태그 안에 dt(제목/이미지), dd(내용)가 있음
-                dt_tags = item.find_all('dt')
-                a_tag = None
+                link = a.get('href', '')
+                title = a.get_text(strip=True)
                 
-                # dt가 2개면(이미지 포함), 두 번째 dt에 제목이 있음. 1개면 바로 제목.
-                if len(dt_tags) == 2:
-                    a_tag = dt_tags[1].find('a')
-                elif len(dt_tags) == 1:
-                    a_tag = dt_tags[0].find('a')
+                # 1. 링크가 없거나 제목이 없으면 패스
+                if not link or not title: continue
                 
-                if not a_tag: continue
-
-                link = a_tag['href']
-                title = a_tag.get_text(strip=True)
+                # 2. 링크 주소에 '/article/' (기사 패턴)이 없으면 패스
+                if '/article/' not in link: continue
                 
+                # 3. 이미 저장한 링크면 패스
                 if link in seen_links: continue
-
-                # 언론사 이름 (span class="writing")
-                press_span = item.find('span', class_='writing')
-                press = press_span.get_text(strip=True) if press_span else "사설"
-
-                # 제목 정리
+                
+                # 4. 언론사 이름 찾기 (약간의 추측 로직)
+                # a 태그 근처의 상위 태그(li)에서 writing 클래스를 찾음
+                press = "사설"
+                parent_li = a.find_parent('li')
+                if parent_li:
+                    press_span = parent_li.find('span', class_='writing')
+                    if press_span:
+                        press = press_span.get_text(strip=True)
+                
+                # 5. 제목 정리
                 if title.startswith(press):
                     title = title[len(press):].lstrip('[] ')
-
+                
                 news_data.append({'title': title, 'link': link, 'press': press})
                 seen_links.add(link)
-
-            except Exception as e:
-                print(f"   ⚠️ 항목 파싱 중 에러: {e}")
-                continue
-        
+                found_count += 1
+                
+            except: continue
+            
+        print(f" -> {found_count}개 발견")
         time.sleep(0.5)
-
-    print(f"✅ 총 {len(news_data)}개 수집 완료")
 
     if news_data:
         # 파일 저장
         with open("index.html", "w", encoding="utf-8") as f:
             f.write(create_html(news_data))
         
-        # [진단 2] 결과 전송
-        msg = f"📰 수집 완료! 총 {len(news_data)}개\n\n"
-        # 5개만 샘플로 보내고 링크 안내
-        for news in news_data[:5]:
-            msg += f"[{news['press']}] {news['title']}\n"
-        msg += f"\n...외 {len(news_data)-5}개\n👉 https://chojh16.github.io/daily-editorial/"
+        # 텔레그램 전송 (최대 3500자씩 끊어서 전송)
+        msg_header = f"📰 수집 성공! 총 {len(news_data)}개\n\n"
+        current_msg = msg_header
         
-        send_msg(msg)
+        for news in news_data:
+            line = f"[{news['press']}] {news['title']}\n{news['link']}\n\n"
+            if len(current_msg) + len(line) > 3500:
+                send_msg(current_msg)
+                current_msg = ""
+            current_msg += line
+            
+        current_msg += f"👉 https://chojh16.github.io/daily-editorial/"
+        send_msg(current_msg)
+        
     else:
-        send_msg("❌ 기사를 하나도 못 찾았습니다. (네이버 구조 변경 의심)")
+        # [디버깅용] 만약 이번에도 실패하면 네이버가 뭘 보여줬는지 글자수라도 찍어봄
+        debug_info = f"❌ 실패.. (페이지 응답 길이: {len(res.text)}자)"
+        send_msg(debug_info)
 
 except Exception as e:
-    err_msg = f"🔥 치명적 에러 발생: {e}"
-    print(err_msg)
-    send_msg(err_msg)
+    send_msg(f"🔥 에러 발생: {e}")
     exit(1)
