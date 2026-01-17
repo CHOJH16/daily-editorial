@@ -24,27 +24,24 @@ def send_telegram(news_list):
     message = f"📰 {today} 주요 사설 요약\n"
     message += f"총 {len(news_list)}개의 사설을 찾았습니다.\n\n"
     
-    # 메시지가 너무 길어질 경우를 대비해 나눠서 보낼 준비
-    # 텔레그램은 한 번에 약 4096자까지만 보낼 수 있음
     current_message = message
     
     for news in news_list:
-        # 각 뉴스 항목 생성
         news_item = f"[{news['press']}] {news['title']}\n{news['link']}\n\n"
         
-        # 길이가 넘치면 먼저 보내고 새로 시작
-        if len(current_message) + len(news_item) > 4000:
+        # 텔레그램 글자수 제한(4096자) 방지: 길면 끊어서 보내기
+        if len(current_message) + len(news_item) > 3800:
             try:
                 send_url = f"https://api.telegram.org/bot{token}/sendMessage"
                 data = {'chat_id': chat_id, 'text': current_message, 'disable_web_page_preview': True}
                 requests.post(send_url, data=data)
-                current_message = "" # 초기화
+                current_message = "" 
             except Exception as e:
                 print(f"전송 중 에러: {e}")
         
         current_message += news_item
     
-    # 웹사이트 링크 추가 및 마지막 메시지 전송
+    # 마지막 조각 전송
     current_message += "👉 웹에서 보기: https://chojh16.github.io/daily-editorial/"
     
     try:
@@ -93,75 +90,77 @@ def create_html(news_list):
     html_content += "</div></body></html>"
     return html_content
 
-# --- 메인 실행 로직 ---
+# --- 메인 실행 로직 (개선된 부분) ---
 try:
     response = requests.get(url, headers=headers)
     response.raise_for_status()
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # [수정된 부분] 
-    # 특정 ul 하나만 찾는 게 아니라, 페이지 내의 모든 ul을 검사합니다.
-    all_uls = soup.find_all('ul')
-    
     news_data = []
-    seen_links = set() # 중복 기사 방지용 (같은 링크가 두 번 나오면 무시)
+    seen_links = set() # 중복 방지용
 
-    for ul in all_uls:
-        # 이 목록(ul) 안에 기사 링크(/article/)가 3개 이상 들어있는지 확인
-        # (메뉴나 푸터 같은 쓸데없는 목록을 거르기 위함)
-        links = ul.find_all('a')
-        article_links = [l for l in links if l.get('href') and '/article/' in l.get('href')]
-        
-        if len(article_links) < 3:
-            continue # 기사 목록이 아닌 것 같으니 패스
-
-        # 기사 목록이 맞다면 하나씩 뜯어봄
-        items = ul.find_all('li')
-        for item in items:
-            try:
-                a_tag = item.find('a')
-                if not a_tag: continue
-                
-                link = a_tag['href']
-                
-                # 이미 저장한 링크면 건너뜀 (중복 방지)
-                if link in seen_links:
-                    continue
-                
-                # 필터링: 링크 주소에 '/article/'이 없으면 기사가 아님
-                if '/article/' not in link:
-                    continue
-
-                # 시간 태그 제거
-                time_tag = a_tag.find('span', class_='time')
-                if time_tag: time_tag.decompose()
-                
-                # 언론사 추출
-                press_tag = item.find(class_='press_name') or item.find('strong')
-                press = press_tag.get_text(strip=True) if press_tag else "사설"
-                
-                # 제목 추출 및 정리
-                title = a_tag.get_text(strip=True)
-                if title.startswith(press):
-                    title = title[len(press):].lstrip('[] ')
-                
-                if len(title) > 5: 
-                    news_data.append({'title': title, 'link': link, 'press': press})
-                    seen_links.add(link) # 저장했다고 표시
-            except Exception:
+    # [핵심 변경] ul 태그를 찾지 않습니다. 
+    # 페이지 전체에서 'li' 태그를 모두 긁어온 뒤, 기사인지 하나하나 검사합니다.
+    all_items = soup.find_all('li')
+    
+    for item in all_items:
+        try:
+            a_tag = item.find('a')
+            if not a_tag: continue
+            
+            link = a_tag.get('href', '')
+            
+            # 1. 링크가 뉴스 기사 형식이 아니면 가차없이 버림
+            if '/article/' not in link:
+                continue
+            
+            # 2. 이미 저장한 기사면 패스 (중복 제거)
+            if link in seen_links:
                 continue
 
+            # 3. 제목 추출
+            title = a_tag.get_text(strip=True)
+            if len(title) < 4: # 제목이 너무 짧으면(아이콘 등) 버림
+                continue
+
+            # 4. 언론사 추출 (여러가지 케이스 대응)
+            press = "사설" # 기본값
+            press_tag = item.find(class_='press_name')
+            if not press_tag:
+                press_tag = item.find('strong')
+            
+            if press_tag:
+                press = press_tag.get_text(strip=True)
+            else:
+                # 태그가 없으면 제목 앞에 [언론사]가 있는지 확인 시도
+                pass
+
+            # 5. 시간 태그 제거 (제목 안에 시간이 섞여있을 경우)
+            time_tag = a_tag.find('span', class_='time')
+            if time_tag: time_tag.decompose()
+            # 다시 제목 추출 (시간 제거 후)
+            title = a_tag.get_text(strip=True)
+
+            # 6. 제목 정리 (언론사 이름 중복 제거)
+            if title.startswith(press):
+                title = title[len(press):].lstrip('[] ')
+
+            news_data.append({'title': title, 'link': link, 'press': press})
+            seen_links.add(link)
+
+        except Exception:
+            continue
+
     if news_data:
-        # 1. HTML 파일 만들기
+        # 파일 저장
         with open("index.html", "w", encoding="utf-8") as f:
             f.write(create_html(news_data))
-        print(f"파일 저장 완료: {len(news_data)}개")
+        print(f"저장 완료: {len(news_data)}개")
         
-        # 2. 텔레그램 보내기
+        # 텔레그램 전송
         send_telegram(news_data)
-        
     else:
-        print("기사를 찾지 못했습니다.")
+        print("기사를 하나도 못 찾았습니다. (코드 확인 필요)")
 
 except Exception as e:
     print(f"에러 발생: {e}")
