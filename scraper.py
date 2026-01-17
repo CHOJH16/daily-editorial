@@ -2,7 +2,7 @@ import requests
 from bs4 import BeautifulSoup
 import datetime
 import os
-import re  # 텍스트 정리를 위한 도구 추가
+import re
 
 # --- 설정 ---
 target_url = "https://news.naver.com/opinion/editorial"
@@ -57,7 +57,16 @@ try:
 
     for item in all_items:
         try:
-            # 1. 링크 찾기
+            # 1. 언론사 이름부터 확실하게 찾기 (press_name 클래스)
+            press = ""
+            press_span = item.find('span', class_='press_name')
+            if press_span:
+                press = press_span.get_text(strip=True)
+            else:
+                # 못 찾았으면 건너뛰거나, 비상용으로 '사설' 쓰지 말고 빈칸 처리 후 나중에 제목에서 추출 시도
+                continue 
+
+            # 2. 링크(a) 찾기
             a_tags = item.find_all('a')
             target_a = None
             for a in a_tags:
@@ -67,45 +76,34 @@ try:
                     break
             
             if not target_a: continue
-
-            # 2. 제목 추출 전, 시간 태그가 섞여있다면 제거 (HTML 구조상)
-            # (혹시 a태그 안에 span class='time' 같은게 있으면 미리 지움)
-            for tag in target_a.find_all(True):
-                if 'time' in tag.get('class', []) or 'date' in tag.get('class', []):
-                    tag.decompose()
+            
+            # [중요] a 태그 안에서 시간 정보나 언론사 이름이 또 들어있으면 미리 삭제
+            # (이게 없어서 제목이랑 시간이랑 떡져서 나왔던 것임)
+            for tag in target_a.find_all(['span', 'em']):
+                tag.decompose() # 태그 삭제
 
             link = target_a['href']
+            
+            # 3. 제목 추출 (순수 텍스트만)
             raw_title = target_a.get_text(strip=True)
             
-            if not raw_title: continue
-            if link in seen_links: continue
-
-            # 3. 언론사 이름 찾기
-            press = "사설"
-            press_span = item.find('span', class_='press_name')
-            if not press_span:
-                press_span = item.find('span', class_='writing')
+            # --- [강력한 제목 청소 시간] ---
             
-            if press_span:
-                press = press_span.get_text(strip=True)
-            
-            # --- [핵심 수정] 제목 대수술 ---
-            
-            # (1) [사설] 문구 강제 삭제
+            # (1) [사설] 제거
             title = raw_title.replace('[사설]', '').strip()
             
-            # (2) 맨 뒤에 붙은 시간(22시간전, 5분전 등) 강제 삭제 (정규표현식 사용)
-            # "숫자" + "시간" or "분" + "전"으로 끝나는 패턴을 찾아서 지움
-            title = re.sub(r'\d+[시간분]전$', '', title).strip()
-            
-            # (3) 제목 앞에 언론사 이름이 또 있으면 삭제 (예: "동아일보 [사설]..." -> "...")
+            # (2) 제목 맨 앞에 언론사 이름이 붙어있으면 떼어내기 (예: "서울경제낙관론..." -> "낙관론...")
             if title.startswith(press):
                 title = title[len(press):].strip()
             
-            # (4) 혹시 남은 대괄호 [] 정리
+            # (3) 제목 맨 뒤에 시간(22시간전)이 붙어있으면 정규식으로 잘라내기
+            title = re.sub(r'\d+[시간분]전$', '', title).strip()
+            
+            # (4) 혹시 모를 대괄호 정리
             title = title.lstrip('[] ')
             
-            # ---------------------------
+            if not title: continue
+            if link in seen_links: continue
 
             news_data.append({'title': title, 'link': link, 'press': press})
             seen_links.add(link)
@@ -120,7 +118,7 @@ try:
         # 텔레그램 전송
         current_msg = ""
         for news in news_data:
-            # 요청하신 포맷: [언론사] 제목 (시간, 사설 태그 없음)
+            # [서울경제] 제목 형태로 출력
             line = f"[{news['press']}] {news['title']}\n{news['link']}\n\n"
             
             if len(current_msg) + len(line) > 3500:
