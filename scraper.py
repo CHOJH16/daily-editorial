@@ -9,40 +9,53 @@ headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 }
 
-# 텔레그램 전송 함수 (새로 추가된 기능)
+# 텔레그램 전송 함수
 def send_telegram(news_list):
     token = os.environ.get('TELEGRAM_TOKEN')
     chat_id = os.environ.get('CHAT_ID')
     
     if not token or not chat_id:
-        print("텔레그램 설정이 없습니다. (GitHub Secrets를 확인하세요)")
+        print("텔레그램 설정이 없습니다.")
         return
 
-    # 오늘 날짜
     today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
     
-    # 메시지 만들기
-    message = f"📰 {today} 주요 사설 요약\n\n"
+    # 메시지 헤더
+    message = f"📰 {today} 주요 사설 요약\n"
+    message += f"총 {len(news_list)}개의 사설을 찾았습니다.\n\n"
+    
+    # 메시지가 너무 길어질 경우를 대비해 나눠서 보낼 준비
+    # 텔레그램은 한 번에 약 4096자까지만 보낼 수 있음
+    current_message = message
     
     for news in news_list:
-        # 제목과 링크를 깔끔하게 정리해서 메시지에 추가
-        message += f"[{news['press']}] {news['title']}\n"
-        message += f"{news['link']}\n\n"
+        # 각 뉴스 항목 생성
+        news_item = f"[{news['press']}] {news['title']}\n{news['link']}\n\n"
+        
+        # 길이가 넘치면 먼저 보내고 새로 시작
+        if len(current_message) + len(news_item) > 4000:
+            try:
+                send_url = f"https://api.telegram.org/bot{token}/sendMessage"
+                data = {'chat_id': chat_id, 'text': current_message, 'disable_web_page_preview': True}
+                requests.post(send_url, data=data)
+                current_message = "" # 초기화
+            except Exception as e:
+                print(f"전송 중 에러: {e}")
+        
+        current_message += news_item
     
-    # 내 웹사이트 링크도 마지막에 추가
-    message += "👉 웹에서 보기: https://chojh16.github.io/daily-editorial/"
-
-    # 텔레그램 서버로 발송 요청
-    send_url = f"https://api.telegram.org/bot{token}/sendMessage"
-    data = {'chat_id': chat_id, 'text': message, 'disable_web_page_preview': True}
+    # 웹사이트 링크 추가 및 마지막 메시지 전송
+    current_message += "👉 웹에서 보기: https://chojh16.github.io/daily-editorial/"
     
     try:
-        response = requests.post(send_url, data=data)
-        print(f"텔레그램 전송 결과: {response.status_code}")
+        send_url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = {'chat_id': chat_id, 'text': current_message, 'disable_web_page_preview': True}
+        requests.post(send_url, data=data)
+        print("텔레그램 전송 완료")
     except Exception as e:
         print(f"텔레그램 전송 실패: {e}")
 
-# HTML 생성 함수 (기존 기능 유지)
+# HTML 생성 함수
 def create_html(news_list):
     today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
     html_content = f"""
@@ -55,6 +68,7 @@ def create_html(news_list):
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f9; }}
             h1 {{ color: #333; text-align: center; border-bottom: 2px solid #03c75a; padding-bottom: 10px; }}
+            .count {{ text-align: center; color: #555; margin-bottom: 20px; font-weight: bold; }}
             .update-time {{ text-align: right; color: #888; font-size: 0.9em; margin-bottom: 20px; }}
             .card {{ background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: transform 0.2s; }}
             .card:hover {{ transform: translateY(-3px); }}
@@ -65,6 +79,7 @@ def create_html(news_list):
     </head>
     <body>
         <h1>📰 오늘의 주요 사설</h1>
+        <div class="count">총 {len(news_list)}개의 기사를 수집했습니다.</div>
         <div class="update-time">업데이트: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
         <div class="news-container">
     """
@@ -84,24 +99,39 @@ try:
     response.raise_for_status()
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    candidates = soup.find_all('ul')
-    target_ul = None
-    max_links = 0
-    for ul in candidates:
-        links = ul.find_all('a')
-        count = sum(1 for a in links if a.get('href') and '/article/' in a.get('href'))
-        if count > max_links:
-            max_links = count
-            target_ul = ul
-            
+    # [수정된 부분] 
+    # 특정 ul 하나만 찾는 게 아니라, 페이지 내의 모든 ul을 검사합니다.
+    all_uls = soup.find_all('ul')
+    
     news_data = []
-    if target_ul:
-        items = target_ul.find_all('li')
+    seen_links = set() # 중복 기사 방지용 (같은 링크가 두 번 나오면 무시)
+
+    for ul in all_uls:
+        # 이 목록(ul) 안에 기사 링크(/article/)가 3개 이상 들어있는지 확인
+        # (메뉴나 푸터 같은 쓸데없는 목록을 거르기 위함)
+        links = ul.find_all('a')
+        article_links = [l for l in links if l.get('href') and '/article/' in l.get('href')]
+        
+        if len(article_links) < 3:
+            continue # 기사 목록이 아닌 것 같으니 패스
+
+        # 기사 목록이 맞다면 하나씩 뜯어봄
+        items = ul.find_all('li')
         for item in items:
             try:
                 a_tag = item.find('a')
                 if not a_tag: continue
                 
+                link = a_tag['href']
+                
+                # 이미 저장한 링크면 건너뜀 (중복 방지)
+                if link in seen_links:
+                    continue
+                
+                # 필터링: 링크 주소에 '/article/'이 없으면 기사가 아님
+                if '/article/' not in link:
+                    continue
+
                 # 시간 태그 제거
                 time_tag = a_tag.find('span', class_='time')
                 if time_tag: time_tag.decompose()
@@ -115,9 +145,9 @@ try:
                 if title.startswith(press):
                     title = title[len(press):].lstrip('[] ')
                 
-                link = a_tag['href']
                 if len(title) > 5: 
                     news_data.append({'title': title, 'link': link, 'press': press})
+                    seen_links.add(link) # 저장했다고 표시
             except Exception:
                 continue
 
@@ -127,7 +157,7 @@ try:
             f.write(create_html(news_data))
         print(f"파일 저장 완료: {len(news_data)}개")
         
-        # 2. 텔레그램 보내기 (여기가 핵심!)
+        # 2. 텔레그램 보내기
         send_telegram(news_data)
         
     else:
