@@ -2,27 +2,54 @@ import requests
 from bs4 import BeautifulSoup
 import datetime
 import os
-import re
+import re # 제목 정리를 위한 도구
 
 # --- 설정 ---
-target_url = "https://news.naver.com/opinion/editorial"
+url = "https://news.naver.com/opinion/editorial"
 headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 }
 
-def send_msg(text):
+# 텔레그램 전송 함수
+def send_telegram(news_list):
     token = os.environ.get('TELEGRAM_TOKEN')
     chat_id = os.environ.get('CHAT_ID')
-    if not token or not chat_id: return
+    
+    if not token or not chat_id:
+        return # 설정 없으면 조용히 종료
+
+    # 메시지 작성 (군더더기 없이 깔끔하게)
+    current_message = ""
+    
+    for news in news_list:
+        # [언론사] 제목
+        # 링크
+        news_item = f"[{news['press']}] {news['title']}\n{news['link']}\n\n"
+        
+        # 길이가 넘치면 먼저 보내고 새로 시작 (4000자 제한 안전장치)
+        if len(current_message) + len(news_item) > 3500:
+            try:
+                send_url = f"https://api.telegram.org/bot{token}/sendMessage"
+                data = {'chat_id': chat_id, 'text': current_message, 'disable_web_page_preview': True}
+                requests.post(send_url, data=data)
+                current_message = "" 
+            except: pass
+        
+        current_message += news_item
+    
+    # 웹사이트 링크 추가 및 마지막 메시지 전송
+    current_message += "👉 웹에서 보기: https://chojh16.github.io/daily-editorial/"
+    
     try:
-        url = f"https://api.telegram.org/bot{token}/sendMessage"
-        data = {'chat_id': chat_id, 'text': text, 'disable_web_page_preview': True}
-        requests.post(url, data=data)
+        send_url = f"https://api.telegram.org/bot{token}/sendMessage"
+        data = {'chat_id': chat_id, 'text': current_message, 'disable_web_page_preview': True}
+        requests.post(send_url, data=data)
     except: pass
 
+# HTML 생성 함수
 def create_html(news_list):
-    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    html = f"""
+    today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
+    html_content = f"""
     <!DOCTYPE html>
     <html lang="ko">
     <head>
@@ -30,104 +57,95 @@ def create_html(news_list):
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>오늘의 사설</title>
         <style>
-            body {{ font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }}
-            h1 {{ border-bottom: 2px solid #03c75a; padding-bottom: 10px; }}
-            .card {{ border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; }}
-            a {{ text-decoration: none; color: #333; font-weight: bold; font-size: 1.1em; }}
-            .press {{ color: #03c75a; font-weight: bold; font-size: 0.9em; }}
+            body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f9; }}
+            h1 {{ color: #333; text-align: center; border-bottom: 2px solid #03c75a; padding-bottom: 10px; }}
+            .update-time {{ text-align: right; color: #888; font-size: 0.9em; margin-bottom: 20px; }}
+            .card {{ background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: transform 0.2s; }}
+            .card:hover {{ transform: translateY(-3px); }}
+            .press {{ font-weight: bold; color: #03c75a; font-size: 0.9em; margin-bottom: 5px; display: block; }}
+            a {{ text-decoration: none; color: #333; font-size: 1.1em; font-weight: bold; display: block; }}
+            a:hover {{ color: #0056b3; }}
         </style>
     </head>
     <body>
         <h1>📰 오늘의 주요 사설</h1>
-        <p style="text-align:right">업데이트: {now} (총 {len(news_list)}개)</p>
+        <div class="update-time">업데이트: {datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")}</div>
+        <div class="news-container">
     """
     for news in news_list:
-        html += f"<div class='card'><span class='press'>{news['press']}</span><br><a href='{news['link']}' target='_blank'>{news['title']}</a></div>"
-    html += "</body></html>"
-    return html
+        html_content += f"""
+        <div class="card">
+            <span class="press">{news['press']}</span>
+            <a href="{news['link']}" target="_blank">{news['title']}</a>
+        </div>
+        """
+    html_content += "</div></body></html>"
+    return html_content
 
-# === 메인 로직 ===
+# --- 메인 실행 로직 ---
 try:
-    res = requests.get(target_url, headers=headers)
-    soup = BeautifulSoup(res.text, 'html.parser')
+    response = requests.get(url, headers=headers)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    
+    # 선생님이 신뢰하시는 '모든 ul 찾기' 방식
+    all_uls = soup.find_all('ul')
     
     news_data = []
     seen_links = set()
-    all_items = soup.find_all('li')
 
-    for item in all_items:
-        try:
-            # 1. 언론사 이름부터 확실하게 찾기 (press_name 클래스)
-            press = ""
-            press_span = item.find('span', class_='press_name')
-            if press_span:
-                press = press_span.get_text(strip=True)
-            else:
-                # 못 찾았으면 건너뛰거나, 비상용으로 '사설' 쓰지 말고 빈칸 처리 후 나중에 제목에서 추출 시도
-                continue 
+    for ul in all_uls:
+        # [중요 수정 1] 기사가 1개라도 있으면 가져오도록 수정 (누락 방지)
+        links = ul.find_all('a')
+        article_links = [l for l in links if l.get('href') and '/article/' in l.get('href')]
+        
+        if len(article_links) == 0:
+            continue 
 
-            # 2. 링크(a) 찾기
-            a_tags = item.find_all('a')
-            target_a = None
-            for a in a_tags:
-                href = a.get('href', '')
-                if href and '/article/' in href:
-                    target_a = a
-                    break
-            
-            if not target_a: continue
-            
-            # [중요] a 태그 안에서 시간 정보나 언론사 이름이 또 들어있으면 미리 삭제
-            # (이게 없어서 제목이랑 시간이랑 떡져서 나왔던 것임)
-            for tag in target_a.find_all(['span', 'em']):
-                tag.decompose() # 태그 삭제
+        items = ul.find_all('li')
+        for item in items:
+            try:
+                a_tag = item.find('a')
+                if not a_tag: continue
+                
+                link = a_tag['href']
+                if link in seen_links: continue
+                if '/article/' not in link: continue
 
-            link = target_a['href']
-            
-            # 3. 제목 추출 (순수 텍스트만)
-            raw_title = target_a.get_text(strip=True)
-            
-            # --- [강력한 제목 청소 시간] ---
-            
-            # (1) [사설] 제거
-            title = raw_title.replace('[사설]', '').strip()
-            
-            # (2) 제목 맨 앞에 언론사 이름이 붙어있으면 떼어내기 (예: "서울경제낙관론..." -> "낙관론...")
-            if title.startswith(press):
-                title = title[len(press):].strip()
-            
-            # (3) 제목 맨 뒤에 시간(22시간전)이 붙어있으면 정규식으로 잘라내기
-            title = re.sub(r'\d+[시간분]전$', '', title).strip()
-            
-            # (4) 혹시 모를 대괄호 정리
-            title = title.lstrip('[] ')
-            
-            if not title: continue
-            if link in seen_links: continue
+                # 태그 청소 (시간 태그 등 미리 삭제)
+                for tag in a_tag.find_all(['span', 'em']):
+                    tag.decompose()
+                
+                # 언론사 추출
+                press_tag = item.find(class_='press_name') or item.find('strong')
+                press = press_tag.get_text(strip=True) if press_tag else "사설"
+                
+                # 제목 추출
+                raw_title = a_tag.get_text(strip=True)
 
-            news_data.append({'title': title, 'link': link, 'press': press})
-            seen_links.add(link)
-            
-        except: continue
+                # [중요 수정 2] 제목 깔끔하게 만들기
+                # 1. [사설] 제거
+                title = raw_title.replace('[사설]', '').strip()
+                # 2. 맨 뒤 시간(22시간전) 제거
+                title = re.sub(r'\d+[시간분]전$', '', title).strip()
+                # 3. 앞쪽 언론사 이름 중복 제거
+                if title.startswith(press):
+                    title = title[len(press):].strip()
+                # 4. 특수문자 정리
+                title = title.lstrip('[] ')
+
+                if len(title) > 2: 
+                    news_data.append({'title': title, 'link': link, 'press': press})
+                    seen_links.add(link)
+            except:
+                continue
 
     if news_data:
-        # 파일 저장
+        # 1. HTML 파일 만들기
         with open("index.html", "w", encoding="utf-8") as f:
             f.write(create_html(news_data))
         
-        # 텔레그램 전송
-        current_msg = ""
-        for news in news_data:
-            # [서울경제] 제목 형태로 출력
-            line = f"[{news['press']}] {news['title']}\n{news['link']}\n\n"
-            
-            if len(current_msg) + len(line) > 3500:
-                send_msg(current_msg)
-                current_msg = ""
-            current_msg += line
-            
-        current_msg += f"👉 웹에서 보기: https://chojh16.github.io/daily-editorial/"
-        send_msg(current_msg)
+        # 2. 텔레그램 보내기
+        send_telegram(news_data)
 
 except Exception:
     pass
