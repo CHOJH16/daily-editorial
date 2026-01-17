@@ -2,7 +2,6 @@ import requests
 from bs4 import BeautifulSoup
 import datetime
 import os
-import re # 제목 정리를 위한 도구
 
 # --- 설정 ---
 url = "https://news.naver.com/opinion/editorial"
@@ -10,43 +9,40 @@ headers = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
 }
 
-# 텔레그램 전송 함수
+# 텔레그램 전송 함수 (새로 추가된 기능)
 def send_telegram(news_list):
     token = os.environ.get('TELEGRAM_TOKEN')
     chat_id = os.environ.get('CHAT_ID')
     
     if not token or not chat_id:
-        return # 설정 없으면 조용히 종료
+        print("텔레그램 설정이 없습니다. (GitHub Secrets를 확인하세요)")
+        return
 
-    # 메시지 작성 (군더더기 없이 깔끔하게)
-    current_message = ""
+    # 오늘 날짜
+    today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
+    
+    # 메시지 만들기
+    message = f"📰 {today} 주요 사설 요약\n\n"
     
     for news in news_list:
-        # [언론사] 제목
-        # 링크
-        news_item = f"[{news['press']}] {news['title']}\n{news['link']}\n\n"
-        
-        # 길이가 넘치면 먼저 보내고 새로 시작 (4000자 제한 안전장치)
-        if len(current_message) + len(news_item) > 3500:
-            try:
-                send_url = f"https://api.telegram.org/bot{token}/sendMessage"
-                data = {'chat_id': chat_id, 'text': current_message, 'disable_web_page_preview': True}
-                requests.post(send_url, data=data)
-                current_message = "" 
-            except: pass
-        
-        current_message += news_item
+        # 제목과 링크를 깔끔하게 정리해서 메시지에 추가
+        message += f"[{news['press']}] {news['title']}\n"
+        message += f"{news['link']}\n\n"
     
-    # 웹사이트 링크 추가 및 마지막 메시지 전송
-    current_message += "👉 웹에서 보기: https://chojh16.github.io/daily-editorial/"
+    # 내 웹사이트 링크도 마지막에 추가
+    message += "👉 웹에서 보기: https://chojh16.github.io/daily-editorial/"
+
+    # 텔레그램 서버로 발송 요청
+    send_url = f"https://api.telegram.org/bot{token}/sendMessage"
+    data = {'chat_id': chat_id, 'text': message, 'disable_web_page_preview': True}
     
     try:
-        send_url = f"https://api.telegram.org/bot{token}/sendMessage"
-        data = {'chat_id': chat_id, 'text': current_message, 'disable_web_page_preview': True}
-        requests.post(send_url, data=data)
-    except: pass
+        response = requests.post(send_url, data=data)
+        print(f"텔레그램 전송 결과: {response.status_code}")
+    except Exception as e:
+        print(f"텔레그램 전송 실패: {e}")
 
-# HTML 생성 함수
+# HTML 생성 함수 (기존 기능 유지)
 def create_html(news_list):
     today = datetime.datetime.now().strftime("%Y년 %m월 %d일")
     html_content = f"""
@@ -55,7 +51,7 @@ def create_html(news_list):
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>오늘의 사설</title>
+        <title>오늘의 사설 ({today})</title>
         <style>
             body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f9; }}
             h1 {{ color: #333; text-align: center; border-bottom: 2px solid #03c75a; padding-bottom: 10px; }}
@@ -85,67 +81,57 @@ def create_html(news_list):
 # --- 메인 실행 로직 ---
 try:
     response = requests.get(url, headers=headers)
+    response.raise_for_status()
     soup = BeautifulSoup(response.text, 'html.parser')
     
-    # 선생님이 신뢰하시는 '모든 ul 찾기' 방식
-    all_uls = soup.find_all('ul')
-    
-    news_data = []
-    seen_links = set()
-
-    for ul in all_uls:
-        # [중요 수정 1] 기사가 1개라도 있으면 가져오도록 수정 (누락 방지)
+    candidates = soup.find_all('ul')
+    target_ul = None
+    max_links = 0
+    for ul in candidates:
         links = ul.find_all('a')
-        article_links = [l for l in links if l.get('href') and '/article/' in l.get('href')]
-        
-        if len(article_links) == 0:
-            continue 
-
-        items = ul.find_all('li')
+        count = sum(1 for a in links if a.get('href') and '/article/' in a.get('href'))
+        if count > max_links:
+            max_links = count
+            target_ul = ul
+            
+    news_data = []
+    if target_ul:
+        items = target_ul.find_all('li')
         for item in items:
             try:
                 a_tag = item.find('a')
                 if not a_tag: continue
                 
-                link = a_tag['href']
-                if link in seen_links: continue
-                if '/article/' not in link: continue
-
-                # 태그 청소 (시간 태그 등 미리 삭제)
-                for tag in a_tag.find_all(['span', 'em']):
-                    tag.decompose()
+                # 시간 태그 제거
+                time_tag = a_tag.find('span', class_='time')
+                if time_tag: time_tag.decompose()
                 
                 # 언론사 추출
                 press_tag = item.find(class_='press_name') or item.find('strong')
                 press = press_tag.get_text(strip=True) if press_tag else "사설"
                 
-                # 제목 추출
-                raw_title = a_tag.get_text(strip=True)
-
-                # [중요 수정 2] 제목 깔끔하게 만들기
-                # 1. [사설] 제거
-                title = raw_title.replace('[사설]', '').strip()
-                # 2. 맨 뒤 시간(22시간전) 제거
-                title = re.sub(r'\d+[시간분]전$', '', title).strip()
-                # 3. 앞쪽 언론사 이름 중복 제거
+                # 제목 추출 및 정리
+                title = a_tag.get_text(strip=True)
                 if title.startswith(press):
-                    title = title[len(press):].strip()
-                # 4. 특수문자 정리
-                title = title.lstrip('[] ')
-
-                if len(title) > 2: 
+                    title = title[len(press):].lstrip('[] ')
+                
+                link = a_tag['href']
+                if len(title) > 5: 
                     news_data.append({'title': title, 'link': link, 'press': press})
-                    seen_links.add(link)
-            except:
+            except Exception:
                 continue
 
     if news_data:
         # 1. HTML 파일 만들기
         with open("index.html", "w", encoding="utf-8") as f:
             f.write(create_html(news_data))
+        print(f"파일 저장 완료: {len(news_data)}개")
         
-        # 2. 텔레그램 보내기
+        # 2. 텔레그램 보내기 (여기가 핵심!)
         send_telegram(news_data)
+        
+    else:
+        print("기사를 찾지 못했습니다.")
 
-except Exception:
-    pass
+except Exception as e:
+    print(f"에러 발생: {e}")
