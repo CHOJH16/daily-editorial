@@ -2,25 +2,28 @@ name: Daily Editorial Scraper
 
 on:
   schedule:
-    - cron: '0 22 * * *' # 한국시간 오전 7시
-  workflow_dispatch:     # 수동 실행 버튼
+    # 0 22 * * 0-5 의미:
+    # UTC 기준 22시 00분에 실행하되, 요일은 일(0)부터 금(5)까지만 실행하라.
+    # -> 한국 시간으로는 월요일~토요일 오전 7시에만 실행됨 (일요일 아침 휴무)
+    - cron: '0 22 * * 0-5'
+  workflow_dispatch:     # 수동 실행 버튼 (이건 요일 상관없이 언제든 눌러짐)
+
+permissions:
+  contents: write
 
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      
     steps:
-    - name: 체크아웃
+    - name: 저장소 체크아웃
       uses: actions/checkout@v3
 
-    - name: 파이썬 설치
+    - name: 파이썬 설정
       uses: actions/setup-python@v4
       with:
         python-version: '3.9'
 
-    - name: 라이브러리 설치
+    - name: 필요한 도구 설치
       run: |
         pip install requests beautifulsoup4
 
@@ -31,9 +34,10 @@ jobs:
       run: |
         python scraper.py
 
-    - name: 결과 저장
+    - name: 결과물 저장 (Commit & Push)
       run: |
-        git config --global user.name 'NewsBot'
+        git config --global user.name 'Daily News Bot'
         git config --global user.email 'bot@noreply.github.com'
         git add index.html
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update news" && git push)
+        # 변경사항이 있을 때만 커밋 (에러 방지)
+        git diff --quiet && git diff --staged --quiet || (git commit -m "Update editorials" && git push)
