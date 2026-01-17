@@ -1,16 +1,18 @@
 import requests
-from bs4 import BeautifulSoup
 import datetime
 import os
 import time
 
 # --- 설정 ---
-# 네이버 뉴스 사설 리스트 페이지
-target_url_base = "https://news.naver.com/main/list.naver?mode=LS2D&mid=shm&sid1=110&sid2=262"
+# 선생님이 원하시는 'https://news.naver.com/opinion/editorial' 페이지가
+# 실제로 데이터를 가져오는 '비밀 창고(API)' 주소입니다.
+# pageNo만 바꾸면 모든 사설을 다 가져올 수 있습니다.
+target_api_url = "https://news.naver.com/opinion/api/editorial"
+
 headers = {
-    # 봇 차단을 막기 위한 일반 사용자 위장 헤더
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8"
+    # 이 페이지에서 왔다고 거짓말을 해야 네이버가 데이터를 줍니다.
+    "Referer": "https://news.naver.com/opinion/editorial"
 }
 
 def send_msg(text):
@@ -51,70 +53,78 @@ def create_html(news_list):
 
 # === 메인 로직 ===
 try:
-    print("🚀 로봇 시작")
-    # 시작 메시지는 생략 (너무 시끄러울 수 있어서)
-
+    print("🚀 로봇 시작 (API 모드)")
+    
     news_data = []
-    seen_links = set()
+    seen_ids = set()
 
-    # 1페이지 ~ 3페이지 탐색
+    # 1페이지 ~ 3페이지 탐색 (API는 1페이지당 20개씩 줍니다. 3페이지면 60개로 충분)
     for page in range(1, 4):
-        url = f"{target_url_base}&page={page}"
-        print(f"접속: {url}")
+        # API 요청 파라미터 (네이버가 요구하는 규칙)
+        params = {
+            'pageNo': page
+        }
         
-        res = requests.get(url, headers=headers)
-        # HTML 텍스트 전체를 가져옵니다.
-        soup = BeautifulSoup(res.text, 'html.parser')
+        print(f"📡 데이터 창고 접속 중 (페이지 {page})...")
+        
+        # HTML이 아니라 JSON 데이터로 요청
+        res = requests.get(target_api_url, headers=headers, params=params)
+        
+        # 데이터가 정상인지 확인
+        if res.status_code != 200:
+            print(f"❌ 접속 실패: {res.status_code}")
+            continue
 
-        # [핵심 변경] 특정 클래스(ul.type06)를 찾지 않습니다.
-        # 페이지 내의 '모든' a 태그를 다 가져와서 검사합니다.
-        all_links = soup.find_all('a')
+        # JSON 봉투 뜯기
+        data = res.json()
         
-        found_count = 0
+        # 기사 목록 꺼내기 (구조: result > articleList)
+        articles = data.get('result', {}).get('articleList', [])
         
-        for a in all_links:
+        if not articles:
+            print("  ⚠️ 더 이상 기사가 없습니다.")
+            break
+            
+        print(f"  -> {len(articles)}개의 데이터 발견")
+
+        for item in articles:
             try:
-                link = a.get('href', '')
-                title = a.get_text(strip=True)
+                # API가 주는 정보들 추출
+                title = item.get('title', '')
+                press = item.get('pressName', '사설')
+                # 기사 ID로 링크 만들기
+                article_id = item.get('articleId')
+                office_id = item.get('pressId')
                 
-                # 1. 링크가 없거나 제목이 없으면 패스
-                if not link or not title: continue
+                if not article_id or not office_id: continue
                 
-                # 2. 링크 주소에 '/article/' (기사 패턴)이 없으면 패스
-                if '/article/' not in link: continue
+                link = f"https://n.news.naver.com/mnews/article/{office_id}/{article_id}"
                 
-                # 3. 이미 저장한 링크면 패스
-                if link in seen_links: continue
+                # 중복 제거
+                if link in seen_ids: continue
                 
-                # 4. 언론사 이름 찾기 (약간의 추측 로직)
-                # a 태그 근처의 상위 태그(li)에서 writing 클래스를 찾음
-                press = "사설"
-                parent_li = a.find_parent('li')
-                if parent_li:
-                    press_span = parent_li.find('span', class_='writing')
-                    if press_span:
-                        press = press_span.get_text(strip=True)
-                
-                # 5. 제목 정리
+                # 제목 정리 (이미 깔끔하게 오지만 혹시 몰라 추가)
+                # API 데이터는 보통 제목에 [사설] 같은 걸 포함하지 않고 깔끔하게 줍니다.
+                # 그래도 혹시 모르니 정리 로직 유지
                 if title.startswith(press):
                     title = title[len(press):].lstrip('[] ')
-                
+
                 news_data.append({'title': title, 'link': link, 'press': press})
-                seen_links.add(link)
-                found_count += 1
+                seen_ids.add(link)
                 
             except: continue
             
-        print(f" -> {found_count}개 발견")
         time.sleep(0.5)
+
+    print(f"✅ 총 {len(news_data)}개의 진짜 사설 수집 완료")
 
     if news_data:
         # 파일 저장
         with open("index.html", "w", encoding="utf-8") as f:
             f.write(create_html(news_data))
         
-        # 텔레그램 전송 (최대 3500자씩 끊어서 전송)
-        msg_header = f"📰 수집 성공! 총 {len(news_data)}개\n\n"
+        # 텔레그램 전송
+        msg_header = f"📰 수집 성공! 총 {len(news_data)}개\n(순수 사설 데이터)\n\n"
         current_msg = msg_header
         
         for news in news_data:
@@ -128,9 +138,7 @@ try:
         send_msg(current_msg)
         
     else:
-        # [디버깅용] 만약 이번에도 실패하면 네이버가 뭘 보여줬는지 글자수라도 찍어봄
-        debug_info = f"❌ 실패.. (페이지 응답 길이: {len(res.text)}자)"
-        send_msg(debug_info)
+        send_msg("❌ 수집된 데이터가 없습니다. (API 주소 확인 필요)")
 
 except Exception as e:
     send_msg(f"🔥 에러 발생: {e}")
