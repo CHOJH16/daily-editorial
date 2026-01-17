@@ -6,14 +6,108 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>오늘의 사설</title>
         <style>
-            body { font-family: sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
-            h1 { border-bottom: 2px solid #03c75a; padding-bottom: 10px; }
-            .card { border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
-            a { text-decoration: none; color: #333; font-weight: bold; font-size: 1.1em; }
-            .press { color: #03c75a; font-weight: bold; font-size: 0.9em; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; background-color: #f4f4f9; }
+            h1 { color: #333; text-align: center; border-bottom: 2px solid #03c75a; padding-bottom: 10px; }
+            .update-time { text-align: right; color: #888; font-size: 0.9em; margin-bottom: 20px; }
+            .card { background: white; border-radius: 8px; padding: 15px; margin-bottom: 15px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: transform 0.2s; }
+            .card:hover { transform: translateY(-3px); }
+            .press { font-weight: bold; color: #03c75a; font-size: 0.9em; margin-bottom: 5px; display: block; }
+            a { text-decoration: none; color: #333; font-size: 1.1em; font-weight: bold; display: block; }
+            a:hover { color: #0056b3; }
         </style>
     </head>
     <body>
         <h1>📰 오늘의 주요 사설</h1>
-        <p style="text-align:right">업데이트: 2026-01-17 13:26:48 (총 18개)</p>
-    <div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/053/0000055109?sid=110' target='_blank'>주간조선[주간적 주관] ARE YOU READY?</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/001/0015852418?sid=110' target='_blank'>연합뉴스[주요 신문 사설](17일 조간)</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/001/0015852366?sid=110' target='_blank'>연합뉴스[기자수첩] 복지부 제작 우울증 드라마, 멈추지 않는 공감 열풍</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/005/0001826702?sid=110' target='_blank'>국민일보국가 긴급권 오남용 적시한 법원</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/025/0003497232?sid=110' target='_blank'>중앙일보유죄판결 윤 전 대통령, 더 늦지 않게 사죄할 때다</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/023/0003953530?sid=110' target='_blank'>조선일보제1야당 몰락과 변질엔 한동훈 책임도 크다</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/015/0005238436?sid=110' target='_blank'>한국경제삼성전자, 메모리 호황기에 TSMC 추격 발판 마련해야</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/015/0005238435?sid=110' target='_blank'>한국경제차액가맹금 대법 판결, 프랜차이즈 선진화 계기로 삼아야</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/015/0005238434?sid=110' target='_blank'>한국경제통합특별시에 '20조원 인센티브'…지방 광역화 필요하지만 졸속은 금물</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/023/0003953529?sid=110' target='_blank'>조선일보미국 개입도 안 통하는 환율, 뾰족한 수는 없다</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/469/0000909472?sid=110' target='_blank'>한국일보반쪽 소통 그친 대통령, 영수회담만 외치는 국민의힘</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/469/0000909471?sid=110' target='_blank'>한국일보통합특별시 연 5조 파격 지원, 선거용 오해 없도록</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/469/0000909470?sid=110' target='_blank'>한국일보내란 409일 만에 첫 사법적 단죄...법치주의 무거움 보여줬다</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/011/0004579777?sid=110' target='_blank'>서울경제낙관론 취한 정부, ‘양극화  K자 성장’ 경고 안 들리나</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/011/0004579776?sid=110' target='_blank'>서울경제행정통합안, 돈 뿌리기·졸속 비판 자초해선 안 된다</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/011/0004579775?sid=110' target='_blank'>서울경제尹, 첫 사법적 단죄…‘내란 재판’ 판결도 엄정히 내려져야</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/023/0003953528?sid=110' target='_blank'>조선일보지방선거 다가오자 시장 군수들 ‘현금 살포’ 시작</a></div><div class='card'><span class='press'>사설</span><br><a href='https://n.news.naver.com/mnews/article/020/0003690071?sid=110' target='_blank'>동아일보‘날림’ 국무회의, ‘무법’ 체포 방해, ‘無恥’ 증거인멸… 모두 유죄</a></div></body></html>
+        <div class="update-time">업데이트: 2026-01-17 13:34:06</div>
+        <div class="news-container">
+    
+        <div class="card">
+            <span class="press">주간조선</span>
+            <a href="https://n.news.naver.com/mnews/article/053/0000055109?sid=110" target="_blank">주간적 주관] ARE YOU READY?</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">연합뉴스</span>
+            <a href="https://n.news.naver.com/mnews/article/001/0015852418?sid=110" target="_blank">주요 신문 사설](17일 조간)</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">연합뉴스</span>
+            <a href="https://n.news.naver.com/mnews/article/001/0015852366?sid=110" target="_blank">기자수첩] 복지부 제작 우울증 드라마, 멈추지 않는 공감 열풍</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">국민일보</span>
+            <a href="https://n.news.naver.com/mnews/article/005/0001826702?sid=110" target="_blank">국가 긴급권 오남용 적시한 법원</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">중앙일보</span>
+            <a href="https://n.news.naver.com/mnews/article/025/0003497232?sid=110" target="_blank">유죄판결 윤 전 대통령, 더 늦지 않게 사죄할 때다</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">조선일보</span>
+            <a href="https://n.news.naver.com/mnews/article/023/0003953530?sid=110" target="_blank">제1야당 몰락과 변질엔 한동훈 책임도 크다</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">한국경제</span>
+            <a href="https://n.news.naver.com/mnews/article/015/0005238436?sid=110" target="_blank">삼성전자, 메모리 호황기에 TSMC 추격 발판 마련해야</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">한국경제</span>
+            <a href="https://n.news.naver.com/mnews/article/015/0005238435?sid=110" target="_blank">차액가맹금 대법 판결, 프랜차이즈 선진화 계기로 삼아야</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">한국경제</span>
+            <a href="https://n.news.naver.com/mnews/article/015/0005238434?sid=110" target="_blank">통합특별시에 '20조원 인센티브'…지방 광역화 필요하지만 졸속은 금물</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">조선일보</span>
+            <a href="https://n.news.naver.com/mnews/article/023/0003953529?sid=110" target="_blank">미국 개입도 안 통하는 환율, 뾰족한 수는 없다</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">한국일보</span>
+            <a href="https://n.news.naver.com/mnews/article/469/0000909472?sid=110" target="_blank">반쪽 소통 그친 대통령, 영수회담만 외치는 국민의힘</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">한국일보</span>
+            <a href="https://n.news.naver.com/mnews/article/469/0000909471?sid=110" target="_blank">통합특별시 연 5조 파격 지원, 선거용 오해 없도록</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">한국일보</span>
+            <a href="https://n.news.naver.com/mnews/article/469/0000909470?sid=110" target="_blank">내란 409일 만에 첫 사법적 단죄...법치주의 무거움 보여줬다</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">서울경제</span>
+            <a href="https://n.news.naver.com/mnews/article/011/0004579777?sid=110" target="_blank">낙관론 취한 정부, ‘양극화  K자 성장’ 경고 안 들리나</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">서울경제</span>
+            <a href="https://n.news.naver.com/mnews/article/011/0004579776?sid=110" target="_blank">행정통합안, 돈 뿌리기·졸속 비판 자초해선 안 된다</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">서울경제</span>
+            <a href="https://n.news.naver.com/mnews/article/011/0004579775?sid=110" target="_blank">尹, 첫 사법적 단죄…‘내란 재판’ 판결도 엄정히 내려져야</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">조선일보</span>
+            <a href="https://n.news.naver.com/mnews/article/023/0003953528?sid=110" target="_blank">지방선거 다가오자 시장 군수들 ‘현금 살포’ 시작</a>
+        </div>
+        
+        <div class="card">
+            <span class="press">동아일보</span>
+            <a href="https://n.news.naver.com/mnews/article/020/0003690071?sid=110" target="_blank">‘날림’ 국무회의, ‘무법’ 체포 방해, ‘無恥’ 증거인멸… 모두 유죄</a>
+        </div>
+        </div></body></html>
