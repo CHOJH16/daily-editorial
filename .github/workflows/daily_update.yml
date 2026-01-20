@@ -13,6 +13,10 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # [추가됨] 최대 60분까지만 실행 허용 (30분 대기 시간 고려하여 넉넉하게 설정)
+    # 만약 1시간이 넘도록 안 끝나면 강제로 끕니다 (무료 시간 낭비 방지)
+    timeout-minutes: 60
+    
     steps:
     - name: 저장소 체크아웃
       uses: actions/checkout@v3
