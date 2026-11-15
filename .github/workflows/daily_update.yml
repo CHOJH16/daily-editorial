@@ -2,44 +2,63 @@ name: Daily Editorial Scraper
 
 on:
   schedule:
-    # UTC 20:30 = 한국 시간 오전 05:30
-    # (일~금 실행 = 한국 월~토 실행)
+    # UTC 일요일~금요일 20:30
+    # = 한국 시간 월요일~토요일 오전 05:30
+    #
+    # 기존 실행 요일과 시간을 유지합니다.
+    # scraper.py에서 한국 시간 오전 06:00까지 기다립니다.
+    # GitHub 예약 실행이 늦게 시작되면 그때 즉시 수집합니다.
     - cron: '30 20 * * 0-5'
+
+  # GitHub Actions에서 수동 실행 가능
   workflow_dispatch:
 
 permissions:
   contents: write
 
+# 같은 브랜치에서 여러 실행이 겹치지 않도록 순서대로 처리
+concurrency:
+  group: daily-editorial-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build:
-    runs-on: ubuntu-latest
-    # [추가됨] 최대 60분까지만 실행 허용 (30분 대기 시간 고려하여 넉넉하게 설정)
-    # 만약 1시간이 넘도록 안 끝나면 강제로 끕니다 (무료 시간 낭비 방지)
+    # ubuntu-latest가 다른 버전으로 바뀌어도 영향을 받지 않도록 고정
+    runs-on: ubuntu-24.04
+
+    # 오전 06:00까지 기다리는 시간을 포함한 최대 실행 시간
     timeout-minutes: 60
-    
+
     steps:
-    - name: 저장소 체크아웃
-      uses: actions/checkout@v3
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v6
 
-    - name: 파이썬 설정
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.9'
+      - name: 파이썬 설정
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
 
-    - name: 필요한 도구 설치
-      run: |
-        pip install requests beautifulsoup4
+      - name: 필요한 도구 설치
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
-    - name: 크롤러 실행
-      env:
-        TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-        CHAT_ID: ${{ secrets.CHAT_ID }}
-      run: |
-        python scraper.py
+      - name: 크롤러 실행
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
+        run: python -u scraper.py
 
-    - name: 결과물 저장 (Commit & Push)
-      run: |
-        git config --global user.name 'Daily News Bot'
-        git config --global user.email 'bot@noreply.github.com'
-        git add index.html
-        git diff --quiet && git diff --staged --quiet || (git commit -m "Update editorials" && git push)
+      - name: 결과물 저장 (Commit & Push)
+        run: |
+          git config user.name "Daily News Bot"
+          git config user.email "bot@noreply.github.com"
+
+          git add index.html
+
+          if git diff --cached --quiet; then
+            echo "index.html에 변경 사항이 없어 커밋하지 않습니다."
+          else
+            git commit -m "Update editorials"
+            git push
+          fi
